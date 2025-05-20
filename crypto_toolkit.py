@@ -52,8 +52,8 @@ def main_menu():
         choice = input("Select an option (0-18): ")
 
         if choice == "0":
-            print("Exiting the program. Goodbye!")
-            sys.exit()
+            print("Exiting program...")
+            break
         elif choice == "1":
             affine_cipher_menu()
         elif choice == "2":
@@ -2198,3 +2198,6 @@ def rc4_encrypt_decrypt(key, data):
     result = bytes(x ^ next(keystream) for x in data)
     
     return result
+
+if __name__ == "__main__":
+    main_menu()
