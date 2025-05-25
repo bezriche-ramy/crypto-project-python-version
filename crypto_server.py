@@ -35,7 +35,7 @@ except ImportError:
     print("Some decryption methods may not be available.")
 
 # Fixed AES key for backward compatibility (16 bytes for AES-128)
-DEFAULT_AES_KEY = b"1234567890123456"  # 16 bytes key
+DEFAULT_AES_KEY = bytes.fromhex('00112233445566778899AABBCCDDEEFF')  # 16 bytes key
 
 class CryptoServer:
     """
@@ -86,8 +86,6 @@ class CryptoServer:
                 return self.decrypt_hill(encrypted_hex, metadata)
             elif method == 'Playfair':
                 return self.decrypt_playfair(encrypted_hex, metadata)
-            elif method == 'One-Time Pad':
-                return self.decrypt_otp(encrypted_hex, metadata)
             else:
                 print(f"Unknown decryption method: {method}")
                 return None
@@ -98,24 +96,35 @@ class CryptoServer:
     
     def decrypt_aes_ecb(self, encrypted_hex, metadata):
         """Decrypt AES ECB encrypted message."""
-        ciphertext = bytes.fromhex(encrypted_hex)
-        # Use default key for now (in practice, key should be securely exchanged)
-        key = DEFAULT_AES_KEY
-        cipher = AES.new(key, AES.MODE_ECB)
-        decrypted = unpad(cipher.decrypt(ciphertext), AES.block_size)
-        return decrypted.decode('utf-8')
+        try:
+            ciphertext = bytes.fromhex(encrypted_hex)
+            # Use default key for now (in practice, key should be securely exchanged)
+            key = DEFAULT_AES_KEY
+            cipher = AES.new(key, AES.MODE_ECB)
+            decrypted = unpad(cipher.decrypt(ciphertext), AES.block_size)
+            return decrypted.decode('utf-8')
+        except Exception as e:
+            print(f"AES-ECB decryption error: {e}")
+            return None
     
     def decrypt_aes_cbc(self, encrypted_hex, metadata):
         """Decrypt AES CBC encrypted message."""
-        encrypted = bytes.fromhex(encrypted_hex)
-        iv_size = metadata.get('iv_size', 16)
-        iv = encrypted[:iv_size]
-        ciphertext = encrypted[iv_size:]
-        # Use default key for now (in practice, key should be securely exchanged)
-        key = DEFAULT_AES_KEY
-        cipher = AES.new(key, AES.MODE_CBC, iv)
-        decrypted = unpad(cipher.decrypt(ciphertext), AES.block_size)
-        return decrypted.decode('utf-8')
+        try:
+            encrypted = bytes.fromhex(encrypted_hex)
+            iv_size = metadata.get('iv_size', 16)
+            if len(encrypted) <= iv_size:
+                raise ValueError("Encrypted data too short to contain IV and ciphertext")
+            
+            iv = encrypted[:iv_size]
+            ciphertext = encrypted[iv_size:]
+            # Use default key for now (in practice, key should be securely exchanged)
+            key = DEFAULT_AES_KEY
+            cipher = AES.new(key, AES.MODE_CBC, iv)
+            decrypted = unpad(cipher.decrypt(ciphertext), AES.block_size)
+            return decrypted.decode('utf-8')
+        except Exception as e:
+            print(f"AES-CBC decryption error: {e}")
+            return None
     
     def decrypt_des_cbc(self, encrypted_hex, metadata):
         """Decrypt DES CBC encrypted message."""
@@ -239,91 +248,168 @@ class CryptoServer:
     
     def decrypt_hill(self, encrypted_hex, metadata):
         """Decrypt Hill cipher encrypted message."""
-        encrypted_bytes = bytes.fromhex(encrypted_hex)
-        encrypted_text = encrypted_bytes.decode('utf-8')
-        matrix = metadata.get('matrix', [[1, 0], [0, 1]])
-        
-        # Calculate matrix inverse modulo 36
-        det = (matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0]) % 36
-        det_inv = None
-        for i in range(36):
-            if (det * i) % 36 == 1:
-                det_inv = i
-                break
-        
-        if det_inv is None:
-            raise ValueError("Matrix is not invertible mod 36")
-        
-        # Calculate inverse matrix
-        inv_matrix = [
-            [(det_inv * matrix[1][1]) % 36, (det_inv * (-matrix[0][1])) % 36],
-            [(det_inv * (-matrix[1][0])) % 36, (det_inv * matrix[0][0]) % 36]
-        ]
-        
-        decrypted = ""
-        chars = []
-        
-        # Convert text to values (0-35)
-        for char in encrypted_text:
-            if char.isalpha():
-                chars.append(ord(char.upper()) - ord('A'))
-            elif char.isdigit():
-                chars.append(int(char) + 26)
-                
-        # Process pairs
-        for i in range(0, len(chars), 2):
-            pair = chars[i:i+2]
-            if len(pair) < 2:  # Handle odd length by padding
-                pair.append(35)  # Use '9' (35) as padding
-                
-            # Decrypt the pair
-            result = [
-                sum(inv_matrix[0][j] * pair[j] for j in range(2)) % 36,
-                sum(inv_matrix[1][j] * pair[j] for j in range(2)) % 36
+        try:
+            encrypted_bytes = bytes.fromhex(encrypted_hex)
+            encrypted_text = encrypted_bytes.decode('utf-8')
+            matrix = metadata.get('matrix', [[1, 0], [0, 1]])
+            
+            # Validate matrix structure
+            if not isinstance(matrix, list) or len(matrix) != 2 or not all(isinstance(row, list) and len(row) == 2 for row in matrix):
+                raise ValueError("Invalid Hill cipher matrix format - must be 2x2")
+            
+            # Calculate determinant modulo 36
+            det = (matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0]) % 36
+            
+            # Check if matrix is invertible (gcd(det, 36) = 1)
+            from math import gcd
+            if gcd(det, 36) != 1:
+                raise ValueError(f"Matrix is not invertible mod 36 (det={det}, gcd(det,36)={gcd(det,36)})")
+            
+            # Find modular multiplicative inverse of determinant
+            det_inv = None
+            for i in range(36):
+                if (det * i) % 36 == 1:
+                    det_inv = i
+                    break
+            
+            if det_inv is None:
+                raise ValueError("Could not find modular inverse of determinant")
+            
+            # Calculate inverse matrix
+            inv_matrix = [
+                [(det_inv * matrix[1][1]) % 36, (det_inv * (-matrix[0][1] % 36)) % 36],
+                [(det_inv * (-matrix[1][0] % 36)) % 36, (det_inv * matrix[0][0]) % 36]
             ]
             
-            # Convert results back to characters
-            for val in result:
-                if val < 26:
-                    decrypted += chr(val + ord('A'))
+            # Split message into alphanumeric and non-alphanumeric while tracking positions
+            chars = []
+            char_positions = []
+            preserved_chars = []
+            
+            for i, char in enumerate(encrypted_text):
+                if char.isalnum():
+                    # Convert both letters and numbers to 0-35 range
+                    if char.isalpha():
+                        val = ord(char.upper()) - ord('A')
+                    else:  # isdigit
+                        val = int(char) + 26  # Map 0-9 to 26-35
+                    chars.append(val)
+                    char_positions.append(i)
                 else:
-                    decrypted += str(val - 26)
-        
-        return decrypted
+                    preserved_chars.append((i, char))
+            
+            # Pad the message if needed
+            if len(chars) % 2 != 0:
+                chars.append(35)  # Use '9' (35) as padding
+                char_positions.append(len(encrypted_text))
+            
+            # Process pairs for decryption
+            decrypted_chars = []
+            for i in range(0, len(chars), 2):
+                if i + 1 >= len(chars):  # Safety check
+                    break
+                    
+                pair = [chars[i], chars[i+1]]
+                
+                # Decrypt the pair using the inverse matrix
+                decrypted_pair = [
+                    (inv_matrix[0][0] * pair[0] + inv_matrix[0][1] * pair[1]) % 36,
+                    (inv_matrix[1][0] * pair[0] + inv_matrix[1][1] * pair[1]) % 36
+                ]
+                
+                # Convert back to letters and numbers
+                for val in decrypted_pair:
+                    if val < 26:
+                        decrypted_chars.append(chr(val + ord('A')))
+                    else:
+                        decrypted_chars.append(str(val - 26))
+            
+            # Reconstruct original message with decrypted characters and preserved characters
+            result = [''] * (len(encrypted_text) + (1 if len(decrypted_chars) > len(encrypted_text) else 0))
+            
+            # Fill in decrypted characters
+            for pos, dec_char in zip(char_positions, decrypted_chars):
+                result[pos] = dec_char
+                
+            # Fill in preserved characters
+            for pos, char in preserved_chars:
+                result[pos] = char
+                
+            decrypted = ''.join(c for c in result if c)
+            
+            return decrypted
+        except Exception as e:
+            print(f"Hill cipher decryption error: {e}")
+            return None
     
     def decrypt_playfair(self, encrypted_hex, metadata):
         """Decrypt Playfair cipher encrypted message."""
-        encrypted_bytes = bytes.fromhex(encrypted_hex)
-        encrypted_text = encrypted_bytes.decode('utf-8')
-        key = metadata.get('key', 'KEY')
-        
-        # Create Playfair matrix
-        matrix = self.create_playfair_matrix(key)
-        
-        decrypted = ""
-        for i in range(0, len(encrypted_text), 2):
-            p1, p2 = encrypted_text[i], encrypted_text[i+1]
-            pos1, pos2 = self.find_playfair_positions(matrix, p1, p2)
+        try:
+            encrypted_bytes = bytes.fromhex(encrypted_hex)
+            encrypted_text = encrypted_bytes.decode('utf-8')
+            key = metadata.get('key', 'KEY')
             
-            if pos1[0] == pos2[0]:  # Same row
-                decrypted += matrix[pos1[0]][(pos1[1] - 1) % 5]
-                decrypted += matrix[pos2[0]][(pos2[1] - 1) % 5]
-            elif pos1[1] == pos2[1]:  # Same column
-                decrypted += matrix[(pos1[0] - 1) % 5][pos1[1]]
-                decrypted += matrix[(pos2[0] - 1) % 5][pos2[1]]
-            else:  # Rectangle
-                decrypted += matrix[pos1[0]][pos2[1]]
-                decrypted += matrix[pos2[0]][pos1[1]]
-        
-        return decrypted
+            # Filter out non-alphabetic characters
+            encrypted_letters = ''.join(c for c in encrypted_text if c.isalpha())
+            
+            # Check if we have enough characters to decrypt
+            if len(encrypted_letters) < 2 or len(encrypted_letters) % 2 != 0:
+                raise ValueError("Invalid Playfair ciphertext length")
+                
+            # Create Playfair matrix
+            matrix = self.create_playfair_matrix(key)
+            
+            # Track original positions of alphanumeric and non-alphanumeric characters
+            letter_positions = [i for i, c in enumerate(encrypted_text) if c.isalpha()]
+            preserved_chars = [(i, c) for i, c in enumerate(encrypted_text) if not c.isalpha()]
+            
+            # Decrypt only the letters
+            decrypted_letters = ""
+            pairs = []
+            for i in range(0, len(encrypted_letters), 2):
+                if i + 1 < len(encrypted_letters):  # Make sure we have a complete pair
+                    pairs.append(encrypted_letters[i:i+2])
+            
+            for pair in pairs:
+                p1, p2 = pair[0], pair[1]
+                pos1, pos2 = self.find_playfair_positions(matrix, p1, p2)
+                
+                if not pos1 or not pos2:
+                    raise ValueError(f"Character not found in Playfair matrix: {p1} or {p2}")
+                    
+                if pos1[0] == pos2[0]:  # Same row
+                    decrypted_letters += matrix[pos1[0]][(pos1[1] - 1) % 5]
+                    decrypted_letters += matrix[pos2[0]][(pos2[1] - 1) % 5]
+                elif pos1[1] == pos2[1]:  # Same column
+                    decrypted_letters += matrix[(pos1[0] - 1) % 5][pos1[1]]
+                    decrypted_letters += matrix[(pos2[0] - 1) % 5][pos2[1]]
+                else:  # Rectangle
+                    decrypted_letters += matrix[pos1[0]][pos2[1]]
+                    decrypted_letters += matrix[pos2[0]][pos1[1]]
+            
+            # Reconstruct original message format with decrypted letters and preserved characters
+            result = [''] * len(encrypted_text)
+            
+            # Fill in decrypted letters
+            for pos, dec_char in zip(letter_positions, decrypted_letters[:len(letter_positions)]):
+                result[pos] = dec_char
+                
+            # Fill in preserved characters
+            for pos, char in preserved_chars:
+                result[pos] = char
+                
+            decrypted = ''.join(result)
+            
+            # Remove any 'X' characters used for padding (common in Playfair)
+            if decrypted.endswith('X'):
+                decrypted = decrypted[:-1]
+                
+            return decrypted
+        except Exception as e:
+            print(f"Playfair decryption error: {e}")
+            return None
     
-    def decrypt_otp(self, encrypted_hex, metadata):
-        """Decrypt One-Time Pad encrypted message."""
-        ciphertext = bytes.fromhex(encrypted_hex)
-        # Use a default key (in practice, the key should be securely shared)
-        otp_key = b"defaultotpkey" * (len(ciphertext) // 13 + 1)
-        decrypted = bytes(c ^ k for c, k in zip(ciphertext, otp_key[:len(ciphertext)]))
-        return decrypted.decode('utf-8')
+
     
     def create_playfair_matrix(self, key):
         """Create a 5x5 Playfair matrix from a key."""
@@ -479,9 +565,9 @@ def main():
     """
     print("Crypto Server - Secure Communication Server")
     print("=" * 50)
-    print(f"Using default AES key: {DEFAULT_AES_KEY.decode('utf-8')}")
+    print(f"Using default AES key: {DEFAULT_AES_KEY.hex()}")
     print("Supports multiple encryption algorithms:")
-    print("AES (ECB/CBC), DES, RC4, Vigenère, Affine, Hill, Playfair, One-Time Pad")
+    print("AES (ECB/CBC), DES, RC4, Vigenère, Affine, Hill, Playfair")
     print("=" * 50)
     
     # Create and start the server

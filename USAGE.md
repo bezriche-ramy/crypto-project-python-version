@@ -4,7 +4,7 @@ This project provides a secure client-server communication system supporting mul
 
 ## Features
 
-- **Multiple Encryption Algorithms**: AES (ECB/CBC), DES, RC4, Vigenère, Affine, Hill, Playfair, One-Time Pad
+- **Multiple Encryption Algorithms**: AES (ECB/CBC), DES, RC4, Vigenère, Affine, Hill, Playfair
 - **Default Test Keys**: Pre-configured keys for easy testing
 - **Custom Key Support**: Option to input your own encryption keys
 - **Multi-client Support**: Server can handle multiple simultaneous connections
@@ -36,7 +36,6 @@ The client will connect to the server and show an interactive menu.
    - `6`: Affine
    - `7`: Hill
    - `8`: Playfair
-   - `9`: One-Time Pad
 
 3. Choose key option:
    - `1`: Use default test key (recommended for testing)
@@ -73,7 +72,6 @@ Enter message: CRYPTOGRAPHY
 | Affine | Numbers | Two integers (a,b) | gcd(a,26)=1 |
 | Hill | Matrix | 2x2 matrix of integers | Invertible mod 26 |
 | Playfair | Text | Alphabetic characters | Variable length |
-| One-Time Pad | Binary | Hexadecimal | ≥ message length |
 
 ## Default Test Keys
 
@@ -84,7 +82,6 @@ Enter message: CRYPTOGRAPHY
 - **Affine**: `a=5, b=8`
 - **Hill**: `[[3,2],[5,7]]`
 - **Playfair**: `SECRETKEY`
-- **One-Time Pad**: `0123456789ABCDEF...` (extended)
 
 ## Security Considerations
 

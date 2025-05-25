@@ -64,8 +64,7 @@ class CryptoClient:
             '5': 'Vigenère',
             '6': 'Affine',
             '7': 'Hill',
-            '8': 'Playfair',
-            '9': 'One-Time Pad'
+            '8': 'Playfair'
         }
         
         # Default keys for testing (in practice, keys should be securely exchanged)
@@ -77,8 +76,7 @@ class CryptoClient:
             'Vigenère': 'SECRETKEY',
             'Affine': (5, 8),
             'Hill': [[3, 2], [5, 7]],
-            'Playfair': 'SECRETKEY',
-            'One-Time Pad': bytes.fromhex('0123456789ABCDEF' * 8)  # 512-bit
+            'Playfair': 'SECRETKEY'
         }
     
     def display_encryption_menu(self):
@@ -214,21 +212,7 @@ class CryptoClient:
             except ValueError:
                 print("Error: Invalid matrix input")
                 return None
-                
-        elif method == 'One-Time Pad':
-            print(f"\n{method} Key Input:")
-            print("Enter key as hexadecimal (must be at least as long as message)")
-            print("Example: 0123456789ABCDEF...")
-            key_input = input("Key: ").strip()
-            try:
-                key = bytes.fromhex(key_input)
-                if len(key) == 0:
-                    print("Error: Key cannot be empty")
-                    return None
-                return key
-            except ValueError:
-                print("Error: Invalid hexadecimal key")
-                return None
+
         
         return None
         
@@ -376,13 +360,13 @@ class CryptoClient:
                 # Reconstruct original message with encrypted letters and preserved characters
                 result = [''] * (len(message) + (1 if len(hill_encrypted) > len(message) else 0))
                 # Fill in encrypted letters
-                for pos, enc_char in zip(letter_positions, hill_encrypted):
+                for pos, enc_char in zip(char_positions, hill_encrypted):
                     result[pos] = enc_char
                 # Fill in preserved characters
                 for pos, char in preserved_chars:
                     result[pos] = char
                 
-                encrypted = ''.join(c for c in result if c is not None)
+                encrypted = ''.join(c for c in result if c)
                 return encrypted.encode('utf-8').hex(), {'method': 'Hill', 'matrix': key}
                 
             elif method == 'Playfair':
@@ -436,17 +420,44 @@ class CryptoClient:
                 if len(playfair_encrypted) > len(message):
                     result[len(message)] = playfair_encrypted[-1]
                 
-                encrypted = ''.join(c for c in result if c is not None)
+                encrypted = ''.join(c for c in result if c)
                 return encrypted.encode('utf-8').hex(), {'method': 'Playfair', 'key': key}
                 
-            elif method == 'One-Time Pad':
+            elif method == 'RSA':
+                from Crypto.Cipher import PKCS1_OAEP
+                from Crypto.PublicKey import RSA
+                
                 message_bytes = message.encode('utf-8')
-                if len(key) < len(message_bytes):
-                    raise ValueError("Key must be at least as long as the message")
+                # In a real app, key would be shared securely. 
+                # Here we use a pre-generated key for demo
+                if isinstance(key, bytes):
+                    # Use provided key bytes as PEM format
+                    rsa_key = RSA.import_key(key)
+                else:
+                    # Default: Generate a new 2048-bit key
+                    rsa_key = RSA.generate(2048)
                 
-                encrypted = bytes(m ^ k for m, k in zip(message_bytes, key))
-                return encrypted.hex(), {'method': 'One-Time Pad', 'key_size': len(key)}
+                # Export public key in PEM format
+                public_key_pem = rsa_key.publickey().export_key()
                 
+                # Encrypt with public key
+                cipher = PKCS1_OAEP.new(rsa_key.publickey())
+                # RSA has size limits, so we might need to chunk for long messages
+                # For demo, just ensure message is not too long
+                if len(message_bytes) > 190:  # Max size for 2048-bit key with PKCS1_OAEP
+                    message_bytes = message_bytes[:190]
+                    
+                encrypted = cipher.encrypt(message_bytes)
+                
+                # We'll send both the encrypted data and the public key
+                # In a real system, key exchange would be handled separately
+                return encrypted.hex(), {
+                    'method': 'RSA',
+                    'public_key': public_key_pem.hex(),
+                    'private_key': rsa_key.export_key().hex()  # In real app, never share private key!
+                }
+                
+
             else:
                 raise ValueError(f"Unknown encryption method: {method}")
                 
@@ -608,7 +619,7 @@ class CryptoClient:
                 self.display_encryption_menu()
                 
                 # Get encryption method choice
-                method_choice = input("\nSelect encryption method (0-9): ").strip()
+                method_choice = input("\nSelect encryption method (0-8): ").strip()
                 
                 if method_choice == "0":
                     continue
@@ -657,7 +668,7 @@ def main():
     print("Crypto Client - Secure Communication Client")
     print("=" * 50)
     print("Supporting multiple encryption algorithms:")
-    print("AES (ECB/CBC), DES, RC4, Vigenère, Affine, Hill, Playfair, One-Time Pad")
+    print("AES (ECB/CBC), DES, RC4, Vigenère, Affine, Hill, Playfair")
     print("=" * 50)
     
     # Create client instance

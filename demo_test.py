@@ -19,7 +19,7 @@ def test_client_server():
     
     print("\nFeatures:")
     print("✓ Multi-algorithm encryption support")
-    print("✓ AES (ECB/CBC), DES, RC4, Vigenère, Affine, Hill, Playfair, One-Time Pad")
+    print("✓ AES (ECB/CBC), DES, RC4, Vigenère, Affine, Hill, Playfair")
     print("✓ Default test keys for easy testing")
     print("✓ Custom key input support")
     print("✓ Real-time encryption/decryption")
